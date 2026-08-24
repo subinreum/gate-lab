@@ -2,6 +2,7 @@
   "purpose": "静态文本差异对比器，带纯引擎闸门和真实浏览器闸门。",
   "scripts": [
     "compose-report.mjs",
+    "dom-fixtures.mjs",
     "gate-browser.mjs",
     "gate-engine.mjs"
   ],
@@ -9,7 +10,7 @@
     "ci.yml"
   ],
   "expected_markers": {
-    "_why": "marker 的 sha256 登记在这里。report 和 attest 彼此对账只能证明两边拿的是同一个输入，证不了那个输入是该用的那一个。gate-lab-report 和 selftest-report 都是 24 字符，跟上游粘反了长度也看不出来。",
+    "_why": "marker 的 sha256 登记在这里。report 和 attest 彼此对账只能证明两边拿的是同一个输入，证不了那个输入是该用的那一个。gate-lab-report 和 selftest-report 都是 24 字符，粘反了长度也看不出来。",
     "_rule": "改 marker 就必须同时改这里，否则引擎闸门红。",
     "report": "542f92f76942"
   },
@@ -43,7 +44,9 @@
   ],
   "invariants": [
     "引擎闸门只证明纯核心，不证明页面能用",
-    "浏览器闸门必须驱真实页面并逐行核 DOM 结果",
+    "页面闸门必须驱真实页面，并且拿手写夹具当判据，不得拿引擎当 oracle",
+    "手写夹具不得 import src/，否则它继承了引擎的意见",
+    "每个夹具都必须能拓住逐行对齐变异体，否则它只是装饰",
     "回写失败不许静默跳过，必须明确说明本次没有回写任何东西并 exit 1",
     "scripts/ 和 workflows/ 的磁盘集合跟本文件登记集合必须相等",
     "实际传给上游的 marker 必须跟本文件登记的 sha256 对得上",
@@ -51,8 +54,9 @@
     "送达核对走 ci-workflows 的共享可复用工作流，本仓不得内联第二份"
   ],
   "not_asserted_anywhere": [
+    "字形保真度。document.fonts.check 能回答「有没有字形可用」，但「渲染出来的到底是不是那个字」靠 textContent 和盒子尺寸都证不了，需要截图给人看或者 OCR",
     "跨仓一致性。ci-workflows 那条「全仓只允许一份 checkFreshness」只能看见它自己的目录，看不见本仓。两边各自守自己，不是有一处在守全体",
-    "上游 attest.yml 里 stats-marker 的默认值。本仓从内部看不到那个值，只能由上游自己的闸门守（那边已经守了）",
-    "整条 run 零个 job（startup_failure）。所有断言都活在 job 里，零个 job 时没有任何代码有机会说话，而零条运行记录和还没开始跑在面板上一模一样。实例：run 32698335732"
+    "上游 attest.yml 里 stats-marker 的默认值。本仓从内部看不到那个值",
+    "整条 run 零个 job（startup_failure）。所有断言都活在 job 里，零个 job 时没有任何代码有机会说话。实例：run 32698335732"
   ]
 }

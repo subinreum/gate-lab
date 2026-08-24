@@ -1,16 +1,17 @@
 #!/usr/bin/env node
 // 快闸门：只测纯引擎和仓内约束，不碰页面。
 //
-// 这条闸门绿 **不代表页面能用**。引擎对、页面上什么都没渲染，在报告上两边都是绿的,
-// 这就是覆盖缺口的经典形状。页面那一层由 scripts/gate-browser.mjs 单独一个 job 守。
+// 这条闸门绿 **不代表页面能用**。页面那一层由 scripts/gate-browser.mjs 单独一个 job 守，
+// 而且它现在有自己的手写判据（scripts/dom-fixtures.mjs），不再拿引擎当 oracle。
 
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { diffLines, summarize, similarity, reconstruct } from '../src/diff.mjs';
+import { DOM_FIXTURES, naiveAlignmentMutant } from './dom-fixtures.mjs';
 
 const OUT = process.argv[2] || 'out';
-const NL = '\n';
+const NL = String.fromCharCode(10);
 const WF_DIR = '.github/workflows';
 const SCRIPTS_DIR = 'scripts';
 const checks = [];
@@ -46,7 +47,6 @@ for (const [name, L, R] of roundTrip) {
   );
 }
 
-// ---- 相似度：边界必须是硬的，而且要跟旁边的行数对得上 --------------------
 const simCases = [
   ['identical is exactly 1', 'a' + NL + 'b', 'a' + NL + 'b', 1],
   ['all different is exactly 0', 'a' + NL + 'b', 'x' + NL + 'y', 0],
@@ -58,14 +58,9 @@ for (const [name, L, R, want] of simCases) {
 }
 {
   const got = similarity(diffLines('a' + NL + 'b' + NL + 'c', 'a' + NL + 'B' + NL + 'c'));
-  check(
-    'similarity: one replaced line is strictly between 0 and 1',
-    got > 0 && got < 1,
-    'got ' + got.toFixed(4) + '; clamping to an endpoint would hide partial change'
-  );
+  check('similarity: one replaced line is strictly between 0 and 1', got > 0 && got < 1, 'got ' + got.toFixed(4));
 }
 {
-  // 比值必须跟它声称汇总的那组计数一致。人往往只看比值，不看行数。
   const pairs = [
     ['a' + NL + 'b', 'x' + NL + 'a' + NL + 'b'],
     ['a' + NL + 'b' + NL + 'c', 'a' + NL + 'c'],
@@ -79,6 +74,56 @@ for (const [name, L, R, want] of simCases) {
   });
   check('similarity always agrees with the counts beside it', bad.length === 0, bad.length ? bad.length + ' pairs disagree' : pairs.length + ' pairs consistent');
 }
+
+// ---- 夹具自己得诚实 -------------------------------------------------------
+// 页面闸门拿手写夹具当 oracle，那么夹具写错就是一个错的 oracle，比没有更坏。
+// 三条约束：不得引入引擎、必须能拓住逐行对齐变异体、必须跟真引擎一致。
+const fixturesSrc = fs.readFileSync(path.join(SCRIPTS_DIR, 'dom-fixtures.mjs'), 'utf8');
+check(
+  'the DOM fixtures import nothing from src/',
+  !/from\s+['"][^'"]*src\//.test(fixturesSrc) && !/require\([^)]*src\//.test(fixturesSrc),
+  'a fixture that imports the engine inherits the engine opinion and stops being independent'
+);
+check(
+  'at least one DOM fixture contains CJK',
+  DOM_FIXTURES.some(f => f.hasCjk && /[\u3000-\u9fff]/.test(f.expectedRows.map(r => r.text).join(''))),
+  'the runner does not necessarily ship those fonts, and tofu is only visible in a real render'
+);
+check(
+  'there are at least three DOM fixtures',
+  DOM_FIXTURES.length >= 3,
+  DOM_FIXTURES.length + ' fixtures'
+);
+
+const nonDiscriminating = DOM_FIXTURES.filter(f => {
+  const mutant = naiveAlignmentMutant(f.left, f.right).map(r => ({ type: r.type, text: r.text }));
+  return JSON.stringify(mutant) === JSON.stringify(f.expectedRows);
+});
+check(
+  'every DOM fixture disagrees with the naive-alignment mutant',
+  nonDiscriminating.length === 0,
+  nonDiscriminating.length
+    ? 'these cannot catch it, so they are decoration: ' + nonDiscriminating.map(f => f.name).join(', ')
+    : 'all ' + DOM_FIXTURES.length + ' would go red if the engine reverted to index alignment'
+);
+
+const fixtureDisagreement = DOM_FIXTURES.filter(f => {
+  const ops = diffLines(f.left, f.right);
+  const got = ops.map(o => ({ type: o.type, text: o.line }));
+  const s = summarize(ops);
+  return JSON.stringify(got) !== JSON.stringify(f.expectedRows)
+    || String(s.equal) !== f.expectedEqual
+    || String(s.added) !== f.expectedAdd
+    || String(s.deleted) !== f.expectedDel
+    || similarity(ops).toFixed(4) !== f.expectedSimilarity;
+});
+check(
+  'every DOM fixture agrees with the real engine',
+  fixtureDisagreement.length === 0,
+  fixtureDisagreement.length
+    ? 'disagreement means either the engine or the hand-written expectation is wrong: ' + fixtureDisagreement.map(f => f.name).join(', ')
+    : DOM_FIXTURES.length + ' fixtures agree'
+);
 
 // ---- 仓内约束：磁盘集合 == 登记集合 ------------------------------------
 const wfFiles = fs.readdirSync(WF_DIR).filter(f => /\.ya?ml$/.test(f)).sort();
@@ -125,37 +170,13 @@ if (!expectedMarkers || !expectedMarkers.report) {
 
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const pin = (pkg.devDependencies || {}).playwright;
-check(
-  'playwright pin is an exact version',
-  typeof pin === 'string' && /^\d+\.\d+\.\d+$/.test(pin),
-  'package.json devDependencies.playwright = ' + JSON.stringify(pin) + '; a range would drift without any commit'
-);
-check(
-  'workflow never installs playwright unpinned',
-  !/npm install[^\n]*--no-save[^\n]*playwright(?![@\w.-])/.test(ci),
-  'a bare npm install playwright is latest-at-run-time, which is exactly the drift we are guarding'
-);
-check(
-  'workflow installs the pin read from package.json',
-  /playwright@\$\{?PIN\}?/.test(ci) || /playwright@"?\$PIN/.test(ci),
-  'the workflow must read the pin, not carry its own copy of the number'
-);
-check(
-  'the version literal lives in exactly one file',
-  typeof pin === 'string' && !ci.includes(pin),
-  pin && ci.includes(pin) ? pin + ' is hardcoded in ci.yml as well as package.json, so the two can fork' : 'only package.json carries the number'
-);
+check('playwright pin is an exact version', typeof pin === 'string' && /^\d+\.\d+\.\d+$/.test(pin), 'package.json devDependencies.playwright = ' + JSON.stringify(pin));
+check('workflow never installs playwright unpinned', !/npm install[^\n]*--no-save[^\n]*playwright(?![@\w.-])/.test(ci), 'a bare npm install playwright is latest-at-run-time');
+check('workflow installs the pin read from package.json', /playwright@\$\{?PIN\}?/.test(ci) || /playwright@"?\$PIN/.test(ci), 'the workflow must read the pin, not carry its own copy');
+check('the version literal lives in exactly one file', typeof pin === 'string' && !ci.includes(pin), pin && ci.includes(pin) ? pin + ' is hardcoded in ci.yml too' : 'only package.json carries the number');
 
-check(
-  'attest is delegated to the shared reusable workflow',
-  /uses:\s*subinreum\/ci-workflows\/\.github\/workflows\/attest\.yml@/.test(ci),
-  'the hand-written copy here is what let the freshness assertion go missing'
-);
-check(
-  'this repo does not re-inline freshness logic',
-  !/checkFreshness/.test(ci) && !fs.readdirSync(SCRIPTS_DIR).some(f => /freshness/i.test(f)),
-  'second copies grow apart; only the upstream one is watched'
-);
+check('attest is delegated to the shared reusable workflow', /uses:\s*subinreum\/ci-workflows\/\.github\/workflows\/attest\.yml@/.test(ci), 'the hand-written copy here is what let the freshness assertion go missing');
+check('this repo does not re-inline freshness logic', !/checkFreshness/.test(ci) && !fs.readdirSync(SCRIPTS_DIR).some(f => /freshness/i.test(f)), 'second copies grow apart');
 
 const BSLASH = String.fromCharCode(92);
 const ESCAPE_SOURCE = BSLASH + BSLASH + 'u[0-9a-fA-F]{4}';
@@ -168,11 +189,7 @@ for (const f of scriptFiles) {
   const hits = fs.readFileSync(path.join(SCRIPTS_DIR, f), 'utf8').match(new RegExp(ESCAPE_SOURCE, 'g'));
   if (hits) escapeOffenders.push(SCRIPTS_DIR + '/' + f + ': ' + hits.length + ' hits');
 }
-check(
-  'no load-bearing literal uses a unicode escape',
-  escapeOffenders.length === 0,
-  escapeOffenders.length ? escapeOffenders.join('; ') : 'runtime-equivalent but ungreppable is the whole failure class'
-);
+check('no load-bearing literal uses a unicode escape', escapeOffenders.length === 0, escapeOffenders.length ? escapeOffenders.join('; ') : 'runtime-equivalent but ungreppable is the whole failure class');
 
 const failed = checks.filter(c => !c.ok);
 console.log(NL + '共执行 ' + checks.length + ' 条检查，通过 ' + (checks.length - failed.length) + '，失败 ' + failed.length);
