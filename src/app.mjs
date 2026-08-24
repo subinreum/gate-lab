@@ -5,6 +5,8 @@ const MARK = { equal: '\u00a0', add: '+', del: '-' };
 export function render(ops, root, summaryEl) {
   root.textContent = '';
   for (const op of ops) {
+    // 变异体：新增行根本不渲染。引擎一字未改，页面自己把结果吃掉。
+    if (op.type === 'add') continue;
     const tr = document.createElement('tr');
     tr.dataset.type = op.type;
     const mark = document.createElement('td');
