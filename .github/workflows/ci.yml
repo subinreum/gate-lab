@@ -46,11 +46,13 @@ jobs:
       - uses: actions/setup-node@v7
         with:
           node-version: '22'
-      - name: 安装 Playwright
+      - name: 装 Playwright（版本从 package.json 读，不写死在这里）
         shell: bash
         run: |
-          npm init -y >/dev/null 2>&1 || true
-          npm install --no-save playwright
+          set -euo pipefail
+          PIN="$(node -p 'require("./package.json").devDependencies.playwright')"
+          echo "pinned playwright: $PIN"
+          npm install --no-save "playwright@$PIN"
           npx playwright install --with-deps chromium
       - name: 跑页面闸门
         shell: bash
@@ -89,40 +91,11 @@ jobs:
       - browser
       - report
     if: always()
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read
-    steps:
-      - uses: actions/checkout@v7
-      - uses: actions/github-script@v9
-        env:
-          MARKER: '<!-- gate-lab-report -->'
-          ENGINE_RESULT: ${{ needs.engine.result }}
-          BROWSER_RESULT: ${{ needs.browser.result }}
-          REPORT_RESULT: ${{ needs.report.result }}
-        with:
-          retries: 3
-          script: |
-            const marker = process.env.MARKER;
-            const { owner, repo } = context.repo;
-            const prFromEvent = context.payload.pull_request && context.payload.pull_request.number;
-            const where = prFromEvent ? `PR #${prFromEvent}` : `commit ${context.sha.slice(0, 7)}`;
-            const all = prFromEvent
-              ? await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: prFromEvent, per_page: 100 })
-              : await github.paginate(github.rest.repos.listCommentsForCommit, { owner, repo, commit_sha: context.sha, per_page: 100 });
-            const mine = all.filter(c => c.body && c.body.includes(marker));
-            if (mine.length === 0) {
-              core.setFailed(`本次没有回写任何东西（不是回写成功）: ${where} 上找不到带 ${marker} 的评论`);
-              return;
-            }
-            if (mine.length !== 1) {
-              core.setFailed(`${where} 上有 ${mine.length} 条带同一 marker 的评论，去重坏了`);
-            }
-            if (process.env.REPORT_RESULT !== 'success') {
-              core.setFailed(`本次没有回写任何东西（不是回写成功）: report job 是 ${process.env.REPORT_RESULT}`);
-            }
-            if (process.env.ENGINE_RESULT !== 'success' || process.env.BROWSER_RESULT !== 'success') {
-              core.setFailed(`有闸门没绿: engine=${process.env.ENGINE_RESULT} browser=${process.env.BROWSER_RESULT}`);
-            }
+    uses: subinreum/ci-workflows/.github/workflows/attest.yml@main
+    with:
+      marker: '<!-- gate-lab-report -->'
+      gates: '[{"name":"引擎闸门","result":"${{ needs.engine.result }}"},{"name":"页面闸门","result":"${{ needs.browser.result }}"}]'
+      report-result: ${{ needs.report.result }}

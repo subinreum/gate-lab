@@ -6,14 +6,19 @@
 //
 // **断言不是“有元素”，是逐行数对得上。** 行数、每行类型、每行文本、汇总计数，
 // 全部跟引擎在 Node 里算出的结果逐一比对。
+//
+// **版本对得上也是一条断言。** 钉了版本不等于装上的就是那个版本；安装命令写错、
+// 缓存命中旧的、lockfile 漂了，都能让两边分开。
 
 import fs from 'node:fs';
 import http from 'node:http';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { createRequire } from 'node:module';
 import { chromium } from 'playwright';
 import { diffLines, summarize } from '../src/diff.mjs';
 
+const require = createRequire(import.meta.url);
 const OUT = process.argv[2] || 'out';
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const NL = '\n';
@@ -22,6 +27,17 @@ function check(title, ok, detail) {
   checks.push({ title, ok: Boolean(ok), detail });
   console.log(`${ok ? 'PASS' : 'FAIL'}  ${title} | ${detail}`);
 }
+
+// 钉的版本 vs 实际装上的版本
+const pin = JSON.parse(fs.readFileSync(path.join(ROOT, 'package.json'), 'utf8')).devDependencies.playwright;
+let installed = null;
+try { installed = require('playwright/package.json').version; } catch (e) { installed = `读不到：${e.message}`; }
+check(
+  'installed playwright equals the pinned version',
+  installed === pin,
+  `pinned ${pin}, installed ${installed}`
+);
+
 function serve() {
   const server = http.createServer((req, res) => {
     const rel = decodeURIComponent(req.url.split('?')[0]);
@@ -46,7 +62,7 @@ const CASES = [
 const server = await serve();
 const port = server.address().port;
 const browser = await chromium.launch();
-let pageErrors = [];
+const pageErrors = [];
 try {
   const page = await browser.newPage();
   page.on('pageerror', e => pageErrors.push(String(e.message)));
@@ -58,7 +74,7 @@ try {
     await page.fill('#left', L);
     await page.fill('#right', R);
     await page.click('#run');
-    const rows = await page.$$eval('#result tr', trs => trs.map(tr => ({ type: tr.dataset.type, text: tr.querySelector('td.text').textContent })));
+    const rows = await page.$$eval('#result tr', trs => trs.map(tr => ({ type: tr.dataset.type, text: tr.querySelector('td.text') ? tr.querySelector('td.text').textContent : null })));
     const sum = await page.$eval('#summary', el => ({ equal: el.dataset.equal, add: el.dataset.add, del: el.dataset.del }));
     const want = diffLines(L, R).map(o => ({ type: o.type, text: o.line }));
     const ws = summarize(diffLines(L, R));

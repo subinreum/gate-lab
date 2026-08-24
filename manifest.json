@@ -8,16 +8,32 @@
   "workflows": [
     "ci.yml"
   ],
+  "pinned_tools": [
+    {
+      "tool": "playwright",
+      "pin_source": "package.json devDependencies.playwright",
+      "why": "页面闸门的行为不允许时间驱动漂移：不推代码也会变就是最难查的那种",
+      "rule": "版本字面只允许出现在 package.json；workflow 从那里读，浏览器闸门再把实际装上的版本跟它对上"
+    }
+  ],
   "mutable_references": [
     {
       "ref": "subinreum/ci-workflows/.github/workflows/report.yml@main",
       "why": "第一次跨仓库调用方，先跟上游主线跑通，再决定是否冻结版本",
       "rule": "继续沿用或 bump 前，先读上游 diff，确认行为变化不是静默带进来的"
+    },
+    {
+      "ref": "subinreum/ci-workflows/.github/workflows/attest.yml@main",
+      "why": "送达核对必须跟 ci-workflows 用同一份。之前这里手写了一份，结果新鲜度断言没传过来，同一个洞原样复发",
+      "rule": "不允许在本仓重新内联新鲜度逻辑；要改就改上游那一份"
     }
   ],
   "invariants": [
     "引擎闸门只证明纯核心，不证明页面能用",
     "浏览器闸门必须驱真实页面并逐行核 DOM 结果",
-    "回写失败不许静默跳过，必须明确说明本次没有回写任何东西并 exit 1"
+    "回写失败不许静默跳过，必须明确说明本次没有回写任何东西并 exit 1",
+    "scripts/ 和 workflows/ 的磁盘集合跟本文件登记集合必须相等",
+    "Playwright 版本钉住，且实际装上的版本要跟钉的版本对得上",
+    "送达核对走 ci-workflows 的共享可复用工作流，本仓不得内联第二份"
   ]
 }

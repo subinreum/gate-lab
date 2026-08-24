@@ -1,0 +1,9 @@
+{
+  "name": "gate-lab",
+  "private": true,
+  "version": "0.1.0",
+  "description": "静态文本差异对比器",
+  "devDependencies": {
+    "playwright": "1.62.1"
+  }
+}
