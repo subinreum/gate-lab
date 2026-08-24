@@ -1,4 +1,4 @@
-import { diffLines, summarize } from './diff.mjs';
+import { diffLines, summarize, similarity } from './diff.mjs';
 
 const MARK = { equal: '\u00a0', add: '+', del: '-' };
 
@@ -17,10 +17,12 @@ export function render(ops, root, summaryEl) {
     root.append(tr);
   }
   const s = summarize(ops);
+  const ratio = similarity(ops);
   summaryEl.dataset.equal = String(s.equal);
   summaryEl.dataset.add = String(s.added);
   summaryEl.dataset.del = String(s.deleted);
-  summaryEl.textContent = `相同 ${s.equal} 行，新增 ${s.added} 行，删除 ${s.deleted} 行`;
+  summaryEl.dataset.similarity = ratio.toFixed(4);
+  summaryEl.textContent = `相同 ${s.equal} 行，新增 ${s.added} 行，删除 ${s.deleted} 行，相似度 ${(ratio * 100).toFixed(1)}%`;
 }
 
 function wire() {

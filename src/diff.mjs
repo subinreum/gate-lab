@@ -54,6 +54,17 @@ export function summarize(ops) {
   };
 }
 
+// 相似度：相同行 ÷ 总操作数。两侧都空算完全相同（不是 0/0）。
+//
+// 注意这个值必须跟它自己声称汇总的那组计数一致，闸门有一条盯这个：一个看起来
+// 很合理的比值完全可以跟旁边的行数对不上，而人往往只看比值。
+export function similarity(ops) {
+  const s = summarize(ops);
+  const total = s.equal + s.added + s.deleted;
+  if (total === 0) return 1;
+  return s.equal / total;
+}
+
 export function reconstruct(ops) {
   const left = ops.filter(o => o.type !== 'add').map(o => o.line).join('\n');
   const right = ops.filter(o => o.type !== 'del').map(o => o.line).join('\n');
