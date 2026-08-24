@@ -69,27 +69,13 @@ jobs:
           path: out/
           if-no-files-found: error
 
-  report:
-    name: 回报结果
-    needs: [engine, browser]
-    if: always()
-    permissions:
-      contents: write
-      pull-requests: write
-    uses: subinreum/ci-workflows/.github/workflows/report.yml@main
-    with:
-      node-version: '22'
-      gates: '[{"name":"引擎闸门","result":"${{ needs.engine.result }}"},{"name":"页面闸门","result":"${{ needs.browser.result }}"}]'
-      composer-files: scripts/compose-report.mjs
-      composer-entry: scripts/compose-report.mjs
-      marker: '<!-- gate-lab-report -->'
-
+  # 变异体：回写 job 整个删掉。真的一个字都没写出去。
+  # 闸门仍然全绿，所以这一跑在面板上看起来应该是健康的, 除非送达核对真的在守。
   attest:
     name: 送达核对
     needs:
       - engine
       - browser
-      - report
     if: always()
     permissions:
       contents: read
@@ -98,4 +84,6 @@ jobs:
     with:
       marker: '<!-- gate-lab-report -->'
       gates: '[{"name":"引擎闸门","result":"${{ needs.engine.result }}"},{"name":"页面闸门","result":"${{ needs.browser.result }}"}]'
-      report-result: ${{ needs.report.result }}
+      report-result: skipped
+      poll-timeout-seconds: 20
+      poll-interval-seconds: 4
