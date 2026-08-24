@@ -1,7 +1,14 @@
 // 行级 diff：Myers 的简化版（LCS 动态规划）。
 //
 // 为什么不用“逐行对齐”这种便宜写法：它在插入/删除面前会把后续所有行都报成
-// 改动，看起来“有输出”但结果是垃圾。闸门里专门有一条用例盯这个。
+// 改动，看起来“有输出”但结果是垃圾。
+//
+// 这不是空话，PR #5 真的把它换成了逐行对齐跑了一次：顶部插一行，它报
+// equal=0 add=4 del=3，而正确答案是 1 add + 3 equal。不报错、不崩、round-trip
+// 依旧正确, 只是对“什么变了”的判断全错。闸门里那条用例就是盯这个的。
+//
+// 而且那一跑顺带暴露了：页面闸门**拓不住这个**。它把 DOM 跟同一个引擎对比，
+// 引擎错了两边一起错，于是它依旧 18/18 全绿。见 docs/BLIND-SPOTS.md。
 
 export function lcsMatrix(a, b) {
   const m = a.length;
@@ -55,9 +62,6 @@ export function summarize(ops) {
 }
 
 // 相似度：相同行 ÷ 总操作数。两侧都空算完全相同（不是 0/0）。
-//
-// 注意这个值必须跟它自己声称汇总的那组计数一致，闸门有一条盯这个：一个看起来
-// 很合理的比值完全可以跟旁边的行数对不上，而人往往只看比值。
 export function similarity(ops) {
   const s = summarize(ops);
   const total = s.equal + s.added + s.deleted;
