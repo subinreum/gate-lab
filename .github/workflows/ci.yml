@@ -84,6 +84,8 @@ jobs:
       composer-entry: scripts/compose-report.mjs
       marker: '<!-- gate-lab-report -->'
 
+  # 送达核对要把轮询数据写回评论，所以这里必须给写权限。给只读的话共享工作流会在
+  # 更新那一步 403，而那个红的理由跟“没回写”长得很像，很容易让人查错方向。
   attest:
     name: 送达核对
     needs:
@@ -92,8 +94,8 @@ jobs:
       - report
     if: always()
     permissions:
-      contents: read
-      pull-requests: read
+      contents: write
+      pull-requests: write
     uses: subinreum/ci-workflows/.github/workflows/attest.yml@main
     with:
       marker: '<!-- gate-lab-report -->'
