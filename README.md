@@ -1,2 +1,17 @@
 # gate-lab
-Static text-diff tool. Engine gate + real headless browser gate, reporting through subinreum/ci-workflows.
+
+一个静态网页文本差异对比器。
+
+## 质量门
+
+- **引擎闸门**：纯核心语义，10 条快检查
+- **页面闸门**：无头浏览器驱真实页面，逐行核 DOM 输出
+- **共享回写**：通过 [`subinreum/ci-workflows`](https://github.com/subinreum/ci-workflows) 的可复用工作流把报告写回 PR 或 commit
+
+## 为什么浏览器闸门单独跑
+
+因为引擎绿不等于页面能用。最经典的坑就是：核心算法没错，但页面脚本没加载、按钮没绑定、DOM 一行都没渲染出来。只看引擎报告，两边都会是绿的。
+
+## 为什么这里先用 `@main`
+
+这里是 `ci-workflows` 的**第一个跨仓库调用方**。这次有意先用 `@main` 把跨仓库权限、令牌、回写链路跑通，不把“固定版本”当成默认好习惯。代价也明确：它是可变引用。继续沿用或 bump 之前，先读上游 diff，再决定要不要跟。

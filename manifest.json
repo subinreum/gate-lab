@@ -1,0 +1,23 @@
+{
+  "purpose": "静态文本差异对比器，带纯引擎闸门和真实浏览器闸门。",
+  "scripts": [
+    "compose-report.mjs",
+    "gate-browser.mjs",
+    "gate-engine.mjs"
+  ],
+  "workflows": [
+    "ci.yml"
+  ],
+  "mutable_references": [
+    {
+      "ref": "subinreum/ci-workflows/.github/workflows/report.yml@main",
+      "why": "第一次跨仓库调用方，先跟上游主线跑通，再决定是否冻结版本",
+      "rule": "继续沿用或 bump 前，先读上游 diff，确认行为变化不是静默带进来的"
+    }
+  ],
+  "invariants": [
+    "引擎闸门只证明纯核心，不证明页面能用",
+    "浏览器闸门必须驱真实页面并逐行核 DOM 结果",
+    "回写失败不许静默跳过，必须明确说明本次没有回写任何东西并 exit 1"
+  ]
+}

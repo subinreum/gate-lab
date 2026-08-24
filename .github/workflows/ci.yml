@@ -1,0 +1,128 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  engine:
+    name: 引擎闸门
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: 跑引擎闸门
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p out
+          node scripts/gate-engine.mjs out | tee out/stdout-engine.log
+          exit "${PIPESTATUS[0]}"
+      - name: 上传引擎报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: report-engine
+          path: out/
+          if-no-files-found: error
+
+  browser:
+    name: 页面闸门
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+      - name: 安装 Playwright
+        shell: bash
+        run: |
+          npm init -y >/dev/null 2>&1 || true
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: 跑页面闸门
+        shell: bash
+        run: |
+          set -uo pipefail
+          mkdir -p out
+          node scripts/gate-browser.mjs out | tee out/stdout-browser.log
+          exit "${PIPESTATUS[0]}"
+      - name: 上传页面报告
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: report-browser
+          path: out/
+          if-no-files-found: error
+
+  report:
+    name: 回报结果
+    needs: [engine, browser]
+    if: always()
+    permissions:
+      contents: write
+      pull-requests: write
+    uses: subinreum/ci-workflows/.github/workflows/report.yml@main
+    with:
+      node-version: '22'
+      gates: '[{"name":"引擎闸门","result":"${{ needs.engine.result }}"},{"name":"页面闸门","result":"${{ needs.browser.result }}"}]'
+      composer-files: scripts/compose-report.mjs
+      composer-entry: scripts/compose-report.mjs
+      marker: '<!-- gate-lab-report -->'
+
+  attest:
+    name: 送达核对
+    needs:
+      - engine
+      - browser
+      - report
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/github-script@v9
+        env:
+          MARKER: '<!-- gate-lab-report -->'
+          ENGINE_RESULT: ${{ needs.engine.result }}
+          BROWSER_RESULT: ${{ needs.browser.result }}
+          REPORT_RESULT: ${{ needs.report.result }}
+        with:
+          retries: 3
+          script: |
+            const marker = process.env.MARKER;
+            const { owner, repo } = context.repo;
+            const prFromEvent = context.payload.pull_request && context.payload.pull_request.number;
+            const where = prFromEvent ? `PR #${prFromEvent}` : `commit ${context.sha.slice(0, 7)}`;
+            const all = prFromEvent
+              ? await github.paginate(github.rest.issues.listComments, { owner, repo, issue_number: prFromEvent, per_page: 100 })
+              : await github.paginate(github.rest.repos.listCommentsForCommit, { owner, repo, commit_sha: context.sha, per_page: 100 });
+            const mine = all.filter(c => c.body && c.body.includes(marker));
+            if (mine.length === 0) {
+              core.setFailed(`本次没有回写任何东西（不是回写成功）: ${where} 上找不到带 ${marker} 的评论`);
+              return;
+            }
+            if (mine.length !== 1) {
+              core.setFailed(`${where} 上有 ${mine.length} 条带同一 marker 的评论，去重坏了`);
+            }
+            if (process.env.REPORT_RESULT !== 'success') {
+              core.setFailed(`本次没有回写任何东西（不是回写成功）: report job 是 ${process.env.REPORT_RESULT}`);
+            }
+            if (process.env.ENGINE_RESULT !== 'success' || process.env.BROWSER_RESULT !== 'success') {
+              core.setFailed(`有闸门没绿: engine=${process.env.ENGINE_RESULT} browser=${process.env.BROWSER_RESULT}`);
+            }
