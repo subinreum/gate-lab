@@ -73,9 +73,11 @@ jobs:
     name: 回报结果
     needs: [engine, browser]
     if: always()
+    # 变异体：把写权限降成只读。跨仓库调用拿不到令牌时就是这个样子：
+    # 闸门全绿，但结论一个字都没写出去。
     permissions:
-      contents: write
-      pull-requests: write
+      contents: read
+      pull-requests: read
     uses: subinreum/ci-workflows/.github/workflows/report.yml@main
     with:
       node-version: '22'
@@ -99,3 +101,4 @@ jobs:
       marker: '<!-- gate-lab-report -->'
       gates: '[{"name":"引擎闸门","result":"${{ needs.engine.result }}"},{"name":"页面闸门","result":"${{ needs.browser.result }}"}]'
       report-result: ${{ needs.report.result }}
+      poll-timeout-seconds: 30
