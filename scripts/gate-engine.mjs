@@ -7,7 +7,7 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
-import { diffLines, summarize, reconstruct } from '../src/diff.mjs';
+import { diffLines, summarize, similarity, reconstruct } from '../src/diff.mjs';
 
 const OUT = process.argv[2] || 'out';
 const NL = '\n';
@@ -46,6 +46,40 @@ for (const [name, L, R] of roundTrip) {
   );
 }
 
+// ---- 相似度：边界必须是硬的，而且要跟旁边的行数对得上 --------------------
+const simCases = [
+  ['identical is exactly 1', 'a' + NL + 'b', 'a' + NL + 'b', 1],
+  ['all different is exactly 0', 'a' + NL + 'b', 'x' + NL + 'y', 0],
+  ['empty vs empty is 1, not 0/0', '', '', 1]
+];
+for (const [name, L, R, want] of simCases) {
+  const got = similarity(diffLines(L, R));
+  check('similarity: ' + name, Math.abs(got - want) < 1e-9, 'got ' + got.toFixed(4) + ', want ' + want);
+}
+{
+  const got = similarity(diffLines('a' + NL + 'b' + NL + 'c', 'a' + NL + 'B' + NL + 'c'));
+  check(
+    'similarity: one replaced line is strictly between 0 and 1',
+    got > 0 && got < 1,
+    'got ' + got.toFixed(4) + '; clamping to an endpoint would hide partial change'
+  );
+}
+{
+  // 比值必须跟它声称汇总的那组计数一致。人往往只看比值，不看行数。
+  const pairs = [
+    ['a' + NL + 'b', 'x' + NL + 'a' + NL + 'b'],
+    ['a' + NL + 'b' + NL + 'c', 'a' + NL + 'c'],
+    ['你好' + NL + '世界', '你好' + NL + '中国']
+  ];
+  const bad = pairs.filter(([L, R]) => {
+    const ops = diffLines(L, R);
+    const s = summarize(ops);
+    const total = s.equal + s.added + s.deleted;
+    return Math.abs(similarity(ops) - (total === 0 ? 1 : s.equal / total)) > 1e-9;
+  });
+  check('similarity always agrees with the counts beside it', bad.length === 0, bad.length ? bad.length + ' pairs disagree' : pairs.length + ' pairs consistent');
+}
+
 // ---- 仓内约束：磁盘集合 == 登记集合 ------------------------------------
 const wfFiles = fs.readdirSync(WF_DIR).filter(f => /\.ya?ml$/.test(f)).sort();
 const scriptFiles = fs.readdirSync(SCRIPTS_DIR).filter(f => /\.(mjs|cjs|js)$/.test(f)).sort();
@@ -72,9 +106,6 @@ if (!manifest) {
 
 const ci = fs.readFileSync(path.join(WF_DIR, 'ci.yml'), 'utf8');
 
-// ---- MARKER_REGISTRY ----------------------------------------------------
-// 上游的 marker 代理量只证明 report 和 attest 对同一个输入意见一致。这里粘错一个合法
-// marker（比如上游自己的 selftest-report，同样 24 字符），两边依旧一致、依旧全绿。
 const expectedMarkers = (manifest && manifest.expected_markers) || null;
 if (!expectedMarkers || !expectedMarkers.report) {
   check('manifest registers the expected marker hash', false, 'manifest.expected_markers.report is required');
@@ -92,7 +123,6 @@ if (!expectedMarkers || !expectedMarkers.report) {
   );
 }
 
-// ---- Playwright 钉版本：时间驱动的漂移，不推代码也会变 ----------------
 const pkg = JSON.parse(fs.readFileSync('package.json', 'utf8'));
 const pin = (pkg.devDependencies || {}).playwright;
 check(
@@ -116,7 +146,6 @@ check(
   pin && ci.includes(pin) ? pin + ' is hardcoded in ci.yml as well as package.json, so the two can fork' : 'only package.json carries the number'
 );
 
-// ---- 送达核对必须走共享那一份 -------------------------------------------
 check(
   'attest is delegated to the shared reusable workflow',
   /uses:\s*subinreum\/ci-workflows\/\.github\/workflows\/attest\.yml@/.test(ci),
@@ -128,7 +157,6 @@ check(
   'second copies grow apart; only the upstream one is watched'
 );
 
-// ---- 转义层禁令（跟上游同一条规则） --------------------------------
 const BSLASH = String.fromCharCode(92);
 const ESCAPE_SOURCE = BSLASH + BSLASH + 'u[0-9a-fA-F]{4}';
 const escapeOffenders = [];
