@@ -8,6 +8,11 @@
   "workflows": [
     "ci.yml"
   ],
+  "expected_markers": {
+    "_why": "marker 的 sha256 登记在这里。report 和 attest 彼此对账只能证明两边拿的是同一个输入，证不了那个输入是该用的那一个。gate-lab-report 和 selftest-report 都是 24 字符，跟上游粘反了长度也看不出来。",
+    "_rule": "改 marker 就必须同时改这里，否则引擎闸门红。",
+    "report": "542f92f76942"
+  },
   "pinned_tools": [
     {
       "tool": "playwright",
@@ -21,7 +26,7 @@
       "hop": 1,
       "ref": "subinreum/ci-workflows/.github/workflows/report.yml@main",
       "why": "第一次跨仓库调用方，先跟上游主线跑通，再决定是否冻结版本",
-      "bump_rule": "继续沿用或 bump 前先读上游 diff，重点看：回写那一步是否仍非 continue-on-error、两条支路是否仍「找到就更新」、评论正文是否仍带本次 run 链接"
+      "bump_rule": "继续沿用或 bump 前先读上游 diff，重点看：回写那一步是否仍非 continue-on-error、两条支路是否仍找到就更新、评论正文是否仍带本次 run 链接和 marker 代理量"
     },
     {
       "hop": 2,
@@ -32,8 +37,8 @@
     {
       "hop": 3,
       "ref": "attest.yml 的 comparator-ref 默认值 main（scripts/freshness.cjs）",
-      "why": "这是隐形的第二跳：即使把 attest.yml 冻到某个 tag，它内部取比较器的默认 ref 仍然是 main。之前没人登记过这一跳",
-      "bump_rule": "bump 时读的 diff 不是 attest.yml 而是 scripts/freshness.cjs：确认 checkFreshness 仍然对旧 run id 返回 fresh:false，且仍然把混杂新旧当不新鲜。attest 已经会在运行时自证这两条，但自证的是行为，不是意图"
+      "why": "隐形的第二跳：即使把 attest.yml 冻到某个 tag，它内部取比较器的默认 ref 仍然是 main",
+      "bump_rule": "bump 时读的 diff 是 scripts/freshness.cjs，不是 attest.yml：确认 checkFreshness 仍然对旧 run id 返回 fresh:false、仍然把混杂新旧当不新鲜"
     }
   ],
   "invariants": [
@@ -41,11 +46,13 @@
     "浏览器闸门必须驱真实页面并逐行核 DOM 结果",
     "回写失败不许静默跳过，必须明确说明本次没有回写任何东西并 exit 1",
     "scripts/ 和 workflows/ 的磁盘集合跟本文件登记集合必须相等",
+    "实际传给上游的 marker 必须跟本文件登记的 sha256 对得上",
     "Playwright 版本钉住，且实际装上的版本要跟钉的版本对得上",
     "送达核对走 ci-workflows 的共享可复用工作流，本仓不得内联第二份"
   ],
   "not_asserted_anywhere": [
-    "跨仓一致性。ci-workflows 那条「全仓只允许一份 checkFreshness」只能看见它自己的目录，看不见本仓。本仓也有一条对应断言，但那只是「每个仓各自守自己」，不是「有一处在守全体」。新增一个调用方时没有任何东西会提醒它需要这条断言",
-    "整条 run 零个 job（startup_failure）。所有断言都活在 job 里，零个 job 时没有任何代码有机会说话，而「零条运行记录」和「还没开始跑」在面板上长得一模一样。实例：run 32698335732"
+    "跨仓一致性。ci-workflows 那条「全仓只允许一份 checkFreshness」只能看见它自己的目录，看不见本仓。两边各自守自己，不是有一处在守全体",
+    "上游 attest.yml 里 stats-marker 的默认值。本仓从内部看不到那个值，只能由上游自己的闸门守（那边已经守了）",
+    "整条 run 零个 job（startup_failure）。所有断言都活在 job 里，零个 job 时没有任何代码有机会说话，而零条运行记录和还没开始跑在面板上一模一样。实例：run 32698335732"
   ]
 }
