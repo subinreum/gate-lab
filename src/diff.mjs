@@ -1,7 +1,14 @@
-// 行级 diff：Myers 的简化版（LCS 动态规划）。
+// 行级 diff。
 //
-// 为什么不用“逐行对齐”这种便宜写法：它在插入/删除面前会把后续所有行都报成
-// 改动，看起来“有输出”但结果是垃圾。闸门里专门有一条用例盯这个。
+// !!! 变异体分支 test/break-insert-at-top，不合入。
+//
+// 这里故意把 LCS 走法换成了「逐行对齐」，也就是原注释里那个被点名批过的便宜写法。
+// 它不报错、不崩、而且 round-trip 依旧正确（把 diff 应用回去仍然得到两侧原文），
+// 它只是对「什么变了」的判断是错的：顶部插一行，它报 equal=0 add=4 del=3，
+// 而正确答案是 1 add + 3 equal。
+//
+// 为什么故意选这个而不是语法错：语法错只能证明 runner 能跑，证不了那条断言是承重的。
+// 这个形状才是真正危险的那种：看起来有输出，实际是垃圾。
 
 export function lcsMatrix(a, b) {
   const m = a.length;
@@ -18,30 +25,21 @@ export function lcsMatrix(a, b) {
 export function diffLines(leftText, rightText) {
   const a = String(leftText).split('\n');
   const b = String(rightText).split('\n');
-  const dp = lcsMatrix(a, b);
   const out = [];
-  let i = 0;
-  let j = 0;
-  while (i < a.length && j < b.length) {
-    if (a[i] === b[j]) {
-      out.push({ type: 'equal', line: a[i], aIndex: i, bIndex: j });
-      i += 1;
-      j += 1;
-    } else if (dp[i + 1][j] >= dp[i][j + 1]) {
+  const n = Math.max(a.length, b.length);
+  for (let i = 0; i < n; i += 1) {
+    if (i < a.length && i < b.length) {
+      if (a[i] === b[i]) {
+        out.push({ type: 'equal', line: a[i], aIndex: i, bIndex: i });
+      } else {
+        out.push({ type: 'del', line: a[i], aIndex: i, bIndex: null });
+        out.push({ type: 'add', line: b[i], aIndex: null, bIndex: i });
+      }
+    } else if (i < a.length) {
       out.push({ type: 'del', line: a[i], aIndex: i, bIndex: null });
-      i += 1;
     } else {
-      out.push({ type: 'add', line: b[j], aIndex: null, bIndex: j });
-      j += 1;
+      out.push({ type: 'add', line: b[i], aIndex: null, bIndex: i });
     }
-  }
-  while (i < a.length) {
-    out.push({ type: 'del', line: a[i], aIndex: i, bIndex: null });
-    i += 1;
-  }
-  while (j < b.length) {
-    out.push({ type: 'add', line: b[j], aIndex: null, bIndex: j });
-    j += 1;
   }
   return out;
 }
@@ -54,10 +52,6 @@ export function summarize(ops) {
   };
 }
 
-// 相似度：相同行 ÷ 总操作数。两侧都空算完全相同（不是 0/0）。
-//
-// 注意这个值必须跟它自己声称汇总的那组计数一致，闸门有一条盯这个：一个看起来
-// 很合理的比值完全可以跟旁边的行数对不上，而人往往只看比值。
 export function similarity(ops) {
   const s = summarize(ops);
   const total = s.equal + s.added + s.deleted;
